@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>microclog_boat | Command & Telemetry Control</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0b0f19;
+            --card-bg: rgba(18, 24, 38, 0.85);
+            --accent: #00d2ff;
+            --accent-glow: rgba(0, 210, 255, 0.3);
+            --danger: #ff4757;
+            --success: #2ed573;
+            --text: #f1f2f6;
+            --text-muted: #a4b0be;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Outfit', sans-serif; }
+        body { background: var(--bg); color: var(--text); padding: 20px; min-height: 100vh; }
+        
+        header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 25px; }
+        h1 { font-size: 1.8rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; }
+        .badge { background: rgba(46, 213, 115, 0.15); color: var(--success); border: 1px solid var(--success); padding: 5px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; }
+
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+        .card { background: var(--card-bg); border-radius: 16px; padding: 20px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 8px 32px 0 rgba(0,0,0,0.37); }
+        .card-title { font-size: 0.95rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 15px; display: flex; justify-content: space-between; }
+        .val { font-size: 2.2rem; font-weight: 700; color: var(--text); }
+        .unit { font-size: 1rem; color: var(--text-muted); font-weight: 400; }
+
+        .controls { display: grid; gap: 15px; margin-top: 15px; }
+        .btn-group { display: flex; gap: 10px; }
+        button { flex: 1; padding: 14px; border: none; border-radius: 10px; font-weight: 600; font-size: 1rem; cursor: pointer; transition: all 0.2s; background: rgba(255,255,255,0.08); color: var(--text); }
+        button:hover { background: var(--accent); color: var(--bg); box-shadow: 0 0 15px var(--accent-glow); }
+        button.stop { background: rgba(255, 71, 87, 0.2); color: var(--danger); border: 1px solid var(--danger); }
+        button.stop:hover { background: var(--danger); color: #fff; }
+
+        input[type=range] { width: 100%; accent-color: var(--accent); margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🛥️ microclog_boat</h1>
+        <span class="badge" id="sys-status">ONLINE</span>
+    </header>
+
+    <div class="grid">
+        <div class="card">
+            <div class="card-title">Propulsion Thrust</div>
+            <div class="val" id="thrust-val">0 <span class="unit">PWM</span></div>
+            <input type="range" id="thrust-slider" min="-255" max="255" value="0" oninput="sendControl()">
+        </div>
+
+        <div class="card">
+            <div class="card-title">Rudder Steering</div>
+            <div class="val" id="rudder-val">90° <span class="unit">CENTER</span></div>
+            <input type="range" id="rudder-slider" min="30" max="150" value="90" oninput="sendControl()">
+        </div>
+
+        <div class="card">
+            <div class="card-title">Obstacle Sensor</div>
+            <div class="val" id="dist-val">150.0 <span class="unit">cm</span></div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Battery Voltage</div>
+            <div class="val" id="bat-val">12.4 <span class="unit">V</span></div>
+        </div>
+
+        <div class="card" style="grid-column: 1 / -1;">
+            <div class="card-title">Command Actions</div>
+            <div class="btn-group">
+                <button onclick="setMode('MANUAL')">Manual Control</button>
+                <button onclick="setMode('AUTOPILOT')">Autopilot Mode</button>
+                <button class="stop" onclick="emergencyStop()">E-STOP</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function fetchTelemetry() {
+            try {
+                const res = await fetch('/api/telemetry');
+                const data = await res.json();
+                document.getElementById('dist-val').innerHTML = `${data.distance_cm.toFixed(1)} <span class="unit">cm</span>`;
+                document.getElementById('bat-val').innerHTML = `${data.battery_v.toFixed(2)} <span class="unit">V</span>`;
+                document.getElementById('sys-status').innerText = data.mode;
+            } catch (e) {
+                console.error("Telemetry error", e);
+            }
+        }
+
+        async function sendControl() {
+            const thrust = document.getElementById('thrust-slider').value;
+            const rudder = document.getElementById('rudder-slider').value;
+            document.getElementById('thrust-val').innerHTML = `${thrust} <span class="unit">PWM</span>`;
+            document.getElementById('rudder-val').innerHTML = `${rudder}° <span class="unit">SERVO</span>`;
+
+            await fetch('/api/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ thrust, rudder })
+            });
+        }
+
+        async function setMode(mode) {
+            await fetch('/api/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode })
+            });
+        }
+
+        async function emergencyStop() {
+            document.getElementById('thrust-slider').value = 0;
+            document.getElementById('rudder-slider').value = 90;
+            sendControl();
+            setMode('EMERGENCY_STOP');
+        }
+
+        setInterval(fetchTelemetry, 1000);
+    </script>
+</body>
+</html>
